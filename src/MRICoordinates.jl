@@ -2,6 +2,7 @@
 module MRICoordinates
 	
 	import HomogeneousCoordinates
+	using LinearAlgebra
 
 	"""
 		RAS coordinates used by Siemens.
@@ -9,6 +10,7 @@ module MRICoordinates
 		gesture pointing the middle finger into the scanner.
 	"""
 	function ras(dc::AbstractVector{<: Real}, β::Real)
+		@assert length(dc) == 3
 
 		# Find orientation
 		orientation = argmax(i -> abs2(dc[i]), eachindex(dc))
@@ -18,19 +20,19 @@ module MRICoordinates
 		R = Matrix{Float64}(undef, 3, 3)
 
 		# Partition direction
-		@time R[:, 3] .= dc ./ norm(dc) # normalised direction cosines
+		R[:, 3] .= dc ./ norm(dc) # normalised direction cosines
 
 		# Line direction
 		# Choosen orthogonal and lying in the "most orthogonal" canonical plane
 		if orientation == 1
 			n = sqrt(R[1, 3]^2 + R[2, 3]^2)
-			R[1, 2] = -R[2, 3] / n
-			R[2, 2] =  R[1, 3] / n
+			R[1, 2] =  R[2, 3] / n
+			R[2, 2] = -R[1, 3] / n
 			R[3, 2] =  0
 		elseif orientation == 2
 			n = sqrt(R[1, 3]^2 + R[2, 3]^2)
-			R[1, 2] =  R[2, 3] / n
-			R[2, 2] = -R[1, 3] / n
+			R[1, 2] = -R[2, 3] / n
+			R[2, 2] =  R[1, 3] / n
 			R[3, 2] =  0
 		elseif orientation == 3
 			n = sqrt(R[2, 3]^2 + R[3, 3]^2)
@@ -40,7 +42,7 @@ module MRICoordinates
 		end
 
 		# Line and partition direction then determine readout direction
-		@time @views R[:, 1] = R[:, 3] × R[:, 2]
+		@views R[:, 1] .= R[:, 3] × R[:, 2]
 
 		# In plane rotation
 		R = R * HomogeneousCoordinates.R_z(β);
