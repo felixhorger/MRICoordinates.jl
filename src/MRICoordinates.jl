@@ -23,7 +23,7 @@ module MRICoordinates
 	
 	using LinearAlgebra
 
-	@enum Orientation Saggital=1 Coronal=2 Transversal=3 InvalidOrientation=4
+	@enum Orientation Saggital=1 Coronal=2 Transversal=3
 
 	@enum(
 		PatientPosition,
@@ -34,10 +34,12 @@ module MRICoordinates
 		FeetFirstSupine,
 		FeetFirstProne,
 		FeetFirstLateralRight,
-		FeetFirstLateralLeft,
-		InvalidPosition
+		FeetFirstLateralLeft
 	)
 
+	"""
+		In the patient coordinate system
+	"""
 	isvalid_normal(normal::AbstractVector{<: Real}) = normal[argmax(abs2, normal)] > 0
 
 	"""
@@ -56,57 +58,56 @@ module MRICoordinates
 	"""
 	function normal2orientation(normal::AbstractVector{<: Real})
 		sag, cor, tra = abs.(normal)
-		if isequal(sag, cor, Val(6))
-			if		isequal(sag, tra, Val(6));	return Transversal
-			elseif	sag < tra;					return Transversal
-			elseif	sag > tra;					return Coronal
-			end
-		elseif isequal(sag, tra, Val(6))
-			if		sag < cor;	return Coronal
-			elseif	sag > cor;	return Transversal
-			end
-		elseif	isequal(cor, tra, Val(6))
-			if		cor < sag;	return Saggital
-			elseif	cor > sag;	return Transversal
-			end
-		elseif sag > cor
-			if		sag > tra;	return Saggital
-			elseif	sag < tra;	return Transversal
-			end
-		elseif sag < cor
-			if		cor > tra;	return Coronal
-			elseif	cor < tra;	return Transversal
-			end
-		elseif sag > tra
-			if		sag < cor;	return Coronal
-			elseif	sag > cor;	return Saggital
-			end
-		elseif sag < tra
-			if		tra < cor;	return Coronal
-			elseif	tra > cor;	return Transversal
-			end
-		elseif cor > tra
-			if		cor < sag;	return Saggital
-			elseif	cor > sag;	return Coronal
-			end
-		elseif cor < tra
-			if		tra < sag;	return Saggital
-			elseif	tra > sag;	return Transversal
+		orientation = begin
+			if isequal(sag, cor, Val(6))
+				if		isequal(sag, tra, Val(6));	 Transversal
+				elseif	sag < tra;					 Transversal
+				elseif	sag > tra;					 Coronal
+				end
+			elseif isequal(sag, tra, Val(6))
+				if		sag < cor;	 Coronal
+				elseif	sag > cor;	 Transversal
+				end
+			elseif	isequal(cor, tra, Val(6))
+				if		cor < sag;	 Saggital
+				elseif	cor > sag;	 Transversal
+				end
+			elseif sag > cor
+				if		sag > tra;	 Saggital
+				elseif	sag < tra;	 Transversal
+				end
+			elseif sag < cor
+				if		cor > tra;	 Coronal
+				elseif	cor < tra;	 Transversal
+				end
+			elseif sag > tra
+				if		sag < cor;	 Coronal
+				elseif	sag > cor;	 Saggital
+				end
+			elseif sag < tra
+				if		tra < cor;	 Coronal
+				elseif	tra > cor;	 Transversal
+				end
+			elseif cor > tra
+				if		cor < sag;	 Saggital
+				elseif	cor > sag;	 Coronal
+				end
+			elseif cor < tra
+				if		tra < sag;	 Saggital
+				elseif	tra > sag;	 Transversal
+				end
 			end
 		end
-		return InvalidOrientation 
+		return orientation
 	end
 
 
 	"""
-		normal in patient coordinate system (must be normalised)
+		normal in device coordinate system (must be normalised)
 		β rotates clockwise around normal
 	"""
-	function gradient2device(normal::AbstractVector{<: Real}, β::Real, pos::PatientPosition)
+	function gradient2device(normal::AbstractVector{<: Real}, β::Real, orientation::Orientation)
 		@assert length(normal) == 3
-
-		orientation = normal2orientation(normal)
-		normal = patient2device(normal, pos)
 
 		# Allocate space for rotation matrix
 		R = Matrix{Float64}(undef, 3, 3)
@@ -117,8 +118,8 @@ module MRICoordinates
 		# Line direction
 		if orientation == Saggital
 			n = sqrt(normal[1]^2 + normal[2]^2)
-			R[1, 2] = -normal[2] / n
-			R[2, 2] =  normal[1] / n
+			R[1, 2] =  normal[2] / n
+			R[2, 2] = -normal[1] / n
 			R[3, 2] =  0
 			#= Note:
 				This is amazing, no matter how you rotate the volume (apart from β),
@@ -130,18 +131,18 @@ module MRICoordinates
 			=#
 		elseif orientation == Coronal
 			n = sqrt(normal[1]^2 + normal[2]^2)
-			R[1, 2] =  normal[2] / n
-			R[2, 2] = -normal[1] / n
+			R[1, 2] = -normal[2] / n
+			R[2, 2] =  normal[1] / n
 			R[3, 2] =  0
 		elseif orientation == Transversal
 			n = sqrt(normal[2]^2 + normal[3]^2)
 			R[1, 2] =  0
-			R[2, 2] = -normal[3] / n
-			R[3, 2] =  normal[2] / n
+			R[2, 2] =  normal[3] / n
+			R[3, 2] = -normal[2] / n
 		end
 
 		# Line and partition direction then determine readout direction
-		@views R[:, 1] .= R[:, 2] × R[:, 3]
+		@views R[:, 1] .= R[:, 3] × R[:, 2]
 
 		# In plane rotation
 		sinβ, cosβ = sincos(β)
@@ -157,10 +158,10 @@ module MRICoordinates
 
 	function patient2device(pos::PatientPosition)
 		R = zeros(3, 3)
-		if pos == HeadFirstSupine
+		if pos == HeadFirstSupine # This is tested, the others are not
 			R[1, 1] = 1
-			R[2, 2] = -1
-			R[3, 3] = -1
+			R[2, 2] = 1
+			R[3, 3] = 1
 		elseif pos == HeadFirstProne
 			R[1, 1] = -1
 			R[2, 2] = 1
@@ -233,8 +234,13 @@ module MRICoordinates
 
 	device2patient(pos::PatientPosition) = pos |> patient2device |> transpose
 
+	"""
+		normal must be in patient coordinates
+	"""
 	function gradient2patient(normal::AbstractVector{<: Real}, β::Real, pos::PatientPosition)
-		R_gradient2device = gradient2device(normal, β, pos)
+		orientation = normal2orientation(normal)
+		normal = patient2device(normal, pos)
+		R_gradient2device = gradient2device(normal, β, orientation)
 		R_device2patient = device2patient(pos)
 		return R_device2patient * R_gradient2device
 	end
