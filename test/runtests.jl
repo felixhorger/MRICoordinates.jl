@@ -2,9 +2,13 @@
 using Revise
 import MRICoordinates
 
-normal = [0., 0., 1.]
+cor = cosd(90. + 5.)
+tra = cosd(90. + 10.)
+sag = sqrt(1 - cor^2 - tra^2) 
+
+normal = [sag, cor, tra]
 patient_position = MRICoordinates.HeadFirstSupine
-R = MRICoordinates.gradient2device(normal, 0, patient_position)
+@code_warntype MRICoordinates.gradient2device(normal, 0, patient_position)
 
 
 

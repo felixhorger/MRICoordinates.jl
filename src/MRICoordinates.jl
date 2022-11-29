@@ -99,26 +99,26 @@ module MRICoordinates
 
 
 	"""
-		normal in patient coordinate system
+		normal in patient coordinate system (must be normalised)
 		β rotates clockwise around normal
 	"""
-	function gradient2device(normal::AbstractVector{<: Real}, β::Real, patient_position::PatientPosition)
+	function gradient2device(normal::AbstractVector{<: Real}, β::Real, pos::PatientPosition)
 		@assert length(normal) == 3
 
 		orientation = normal2orientation(normal)
-		normal = patient2device(normal, patient_position)
+		normal = patient2device(normal, pos)
 
 		# Allocate space for rotation matrix
 		R = Matrix{Float64}(undef, 3, 3)
 
 		# Partition direction
-		R[:, 3] .= normal ./ norm(normal) # normalised direction cosines
+		R[:, 3] .= normal
 
 		# Line direction
 		if orientation == Saggital
-			n = sqrt(R[1, 3]^2 + R[2, 3]^2)
-			R[1, 2] = -R[2, 3] / n
-			R[2, 2] =  R[1, 3] / n
+			n = sqrt(normal[1]^2 + normal[2]^2)
+			R[1, 2] = -normal[2] / n
+			R[2, 2] =  normal[1] / n
 			R[3, 2] =  0
 			#= Note:
 				This is amazing, no matter how you rotate the volume (apart from β),
@@ -129,15 +129,15 @@ module MRICoordinates
 				hence the above formula is always unique up to a sign.
 			=#
 		elseif orientation == Coronal
-			n = sqrt(R[1, 3]^2 + R[2, 3]^2)
-			R[1, 2] =  R[2, 3] / n
-			R[2, 2] = -R[1, 3] / n
+			n = sqrt(normal[1]^2 + normal[2]^2)
+			R[1, 2] =  normal[2] / n
+			R[2, 2] = -normal[1] / n
 			R[3, 2] =  0
 		elseif orientation == Transversal
-			n = sqrt(R[2, 3]^2 + R[3, 3]^2)
+			n = sqrt(normal[2]^2 + normal[3]^2)
 			R[1, 2] =  0
-			R[2, 2] = -R[3, 3] / n
-			R[3, 2] =  R[2, 3] / n
+			R[2, 2] = -normal[3] / n
+			R[3, 2] =  normal[2] / n
 		end
 
 		# Line and partition direction then determine readout direction
@@ -229,6 +229,14 @@ module MRICoordinates
 			w[3] =  v[3]
 		end
 		return w
+	end
+
+	device2patient(pos::PatientPosition) = pos |> patient2device |> transpose
+
+	function gradient2patient(normal::AbstractVector{<: Real}, β::Real, pos::PatientPosition)
+		R_gradient2device = gradient2device(normal, β, pos)
+		R_device2patient = device2patient(pos)
+		return R_device2patient * R_gradient2device
 	end
 end
 
