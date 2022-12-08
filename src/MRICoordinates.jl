@@ -1,29 +1,31 @@
 
 """
-	Only right handed systems used
+	MRICoordinates.jl
 
-	Device Coordinate System (DCS):
-		- Stand in front of the scanner, take the right hand,
-		thumb pointing to your right, index upwards, middle finger towards you.
-		- Middle finger is aligned with B0.
-		- All fingers are aligned with the physical gradient axes.
+*Only right handed systems*
 
-	Gradient Coordinate System (GCS):
-		- Rotated by user, i.e. read, phase, partition.
-		- Same origin as scanner coordinate system.	
+*Only tested for Siemens scanners*
 
-	Patient Coordinate System (PCS):
-		- Sag (right -> left), Cor (anterior -> posterior) and Tra (feet -> head) coordinates,
-		thus also known as LPS (s = superior).
-		- Origin equal to that of scanner coordinate system
+## Device Coordinate System
+- Stand in front of the scanner, take the right hand, thumb pointing to your right, index upwards, middle finger towards you.
+- Middle finger is aligned with the main magnetic field B0.
+- All fingers are aligned with the physical gradient axes.
+
+## Patient Coordinate System
+- Sagittal (right -> left), coronal (anterior -> posterior) and transversal (feet -> head) coordinates.
+- Origin equal to that of device coordinate system.
+- Axes are (anti-)parallel with those of the device coordinate system.
+
+## Gradient Coordinate System
+- Rotated by user, i.e. read, phase, partition.
+- Same origin as scanner coordinate system, i.e. field of view shift not considered.
 
 """
-
 module MRICoordinates
-	
+
 	using LinearAlgebra
 
-	@enum Orientation Saggital=1 Coronal=2 Transversal=3
+	@enum Orientation Sagittal=1 Coronal=2 Transversal=3
 
 	@enum(
 		PatientPosition,
@@ -37,13 +39,12 @@ module MRICoordinates
 		FeetFirstLateralLeft
 	)
 
-	"""
-		In the patient coordinate system
-	"""
-	isvalid_normal(normal::AbstractVector{<: Real}) = normal[argmax(abs2, normal)] > 0
 
 	"""
-		Necessary because scanner doesn't use doubles apparently
+		isequal(x::Real, y::Real, digits::Val{N})
+
+	Necessary because Siemens scanners don't use doubles apparently
+	TODO: What holds for other scanner manufacturers?
 	"""
 	function isequal(x::Real, y::Real, digits::Val{N}) where N
 		limit = 10.0^(-N)
@@ -51,10 +52,12 @@ module MRICoordinates
 	end
 
 	"""
-		normal: basically the partition direction
-		Basically does this `Orientation(argmax(i -> abs(normal[i]), eachindex(normal)))`
-		but with special handling of edge cases if some components of normal are equal to the sixth digit.
-		returns -1 if normal is not valid (when can this happen?)
+		normal2orientation(normal::AbstractVector{<: Real})
+
+	`normal` is the partition direction.
+
+	Basically does `Orientation(argmax(i -> abs(normal[i]), eachindex(normal)))`
+	but with special handling of edge cases if some components of `normal` are equal up to the sixth digit.
 	"""
 	function normal2orientation(normal::AbstractVector{<: Real})
 		sag, cor, tra = abs.(normal)
@@ -69,11 +72,11 @@ module MRICoordinates
 				elseif	sag > cor;	 Transversal
 				end
 			elseif	isequal(cor, tra, Val(6))
-				if		cor < sag;	 Saggital
+				if		cor < sag;	 Sagittal
 				elseif	cor > sag;	 Transversal
 				end
 			elseif sag > cor
-				if		sag > tra;	 Saggital
+				if		sag > tra;	 Sagittal
 				elseif	sag < tra;	 Transversal
 				end
 			elseif sag < cor
@@ -82,18 +85,18 @@ module MRICoordinates
 				end
 			elseif sag > tra
 				if		sag < cor;	 Coronal
-				elseif	sag > cor;	 Saggital
+				elseif	sag > cor;	 Sagittal
 				end
 			elseif sag < tra
 				if		tra < cor;	 Coronal
 				elseif	tra > cor;	 Transversal
 				end
 			elseif cor > tra
-				if		cor < sag;	 Saggital
+				if		cor < sag;	 Sagittal
 				elseif	cor > sag;	 Coronal
 				end
 			elseif cor < tra
-				if		tra < sag;	 Saggital
+				if		tra < sag;	 Sagittal
 				elseif	tra > sag;	 Transversal
 				end
 			end
@@ -103,10 +106,17 @@ module MRICoordinates
 
 
 	"""
-		normal in device coordinate system (must be normalised)
-		β rotates clockwise around normal
+		gradient2patient(normal::AbstractVector{<: Real}, β::Real, orientation::Orientation)
+
+	Transformation matrix from gradient coordinates (read, line, partition) to patient coordinates
+	(sagittal, coronal, transversal).
+
+	# Arguments
+	- `normal`: partition direction in patient coordinates.
+	- `β`: in-plane rotation angle, clockwise around `normal`
+	Note: both can be obtained with the package [MRIRawData.jl](https://www.github.com/felixhorger/MRIRawData.jl).
 	"""
-	function gradient2device(normal::AbstractVector{<: Real}, β::Real, orientation::Orientation)
+	function gradient2patient(normal::AbstractVector{<: Real}, β::Real, orientation::Orientation)
 		@assert length(normal) == 3
 
 		# Allocate space for rotation matrix
@@ -116,10 +126,10 @@ module MRICoordinates
 		R[:, 3] .= normal
 
 		# Line direction
-		if orientation == Saggital
+		if orientation == Sagittal
 			n = sqrt(normal[1]^2 + normal[2]^2)
-			R[1, 2] =  normal[2] / n
-			R[2, 2] = -normal[1] / n
+			R[1, 2] = -normal[2] / n
+			R[2, 2] =  normal[1] / n
 			R[3, 2] =  0
 			#= Note:
 				This is amazing, no matter how you rotate the volume (apart from β),
@@ -131,8 +141,8 @@ module MRICoordinates
 			=#
 		elseif orientation == Coronal
 			n = sqrt(normal[1]^2 + normal[2]^2)
-			R[1, 2] = -normal[2] / n
-			R[2, 2] =  normal[1] / n
+			R[1, 2] =  normal[2] / n
+			R[2, 2] = -normal[1] / n
 			R[3, 2] =  0
 		elseif orientation == Transversal
 			n = sqrt(normal[2]^2 + normal[3]^2)
@@ -142,7 +152,7 @@ module MRICoordinates
 		end
 
 		# Line and partition direction then determine readout direction
-		@views R[:, 1] .= R[:, 3] × R[:, 2]
+		@views R[:, 1] .= R[:, 2] × R[:, 3]
 
 		# In plane rotation
 		sinβ, cosβ = sincos(β)
@@ -155,94 +165,118 @@ module MRICoordinates
 		return R_rotated
 	end
 
+	"""
+		@patient2device_expand_index_and_sign expr1 expr2 i1 i2 sign
 
+	Helper for patient to device coordinate transformations.
+	`sign` can be either `(+)` or `(-)`.
+
+	1) If arguments are `(a, 1, i, j, sign)` then it gives `a[i, j] = sign(1)`
+
+	2) If arguments are `(a, b, i, j, sign)` then it gives `a[i] = sign(b[j])`
+	"""
+	macro patient2device_expand_index_and_sign(expr1, expr2, i1, i2, sign)
+		if expr2 == 1
+			i = (i1, i2)
+			expr2 = eval(Expr(:call, sign, 1))
+		else
+			esc(expr2)
+			i = (i1,)
+			expr2 = Expr(:call, sign, Expr(:ref, expr2, i2))
+		end
+		esc(quote
+			$(Expr(:ref, expr1, i...)) = $expr2
+		end)
+	end
+
+	"""
+		@patient2device expr1 expr2
+
+	Uses the `@patient2device_expand_index_and_sign` to select the correct signs and indices
+	for each possible patient position.
+	"""
+	macro patient2device(pos, expr1, expr2)
+		pos, expr1 = esc.((pos, expr1))
+		if expr2 != 1
+			expr2 = esc(expr2)
+		end
+		quote
+			if $pos == HeadFirstSupine
+				@patient2device_expand_index_and_sign $expr1 $expr2 1 1 (+)
+				@patient2device_expand_index_and_sign $expr1 $expr2 2 2 (-)
+				@patient2device_expand_index_and_sign $expr1 $expr2 3 3 (-)
+			elseif $pos == HeadFirstProne
+				@patient2device_expand_index_and_sign $expr1 $expr2 1 1 (-)
+				@patient2device_expand_index_and_sign $expr1 $expr2 2 2 (+)
+				@patient2device_expand_index_and_sign $expr1 $expr2 3 3 (-)
+			elseif $pos == HeadFirstLateralRight
+				@patient2device_expand_index_and_sign $expr1 $expr2 1 2 (+)
+				@patient2device_expand_index_and_sign $expr1 $expr2 2 1 (+)
+				@patient2device_expand_index_and_sign $expr1 $expr2 3 3 (-)
+			elseif $pos == HeadFirstLateralLeft
+				@patient2device_expand_index_and_sign $expr1 $expr2 1 2 (-)
+				@patient2device_expand_index_and_sign $expr1 $expr2 2 1 (-)
+				@patient2device_expand_index_and_sign $expr1 $expr2 3 3 (-)
+			elseif $pos == FeetFirstSupine
+				@patient2device_expand_index_and_sign $expr1 $expr2 1 1 (-)
+				@patient2device_expand_index_and_sign $expr1 $expr2 2 2 (-)
+				@patient2device_expand_index_and_sign $expr1 $expr2 3 3 (+)
+			elseif $pos == FeetFirstProne
+				@patient2device_expand_index_and_sign $expr1 $expr2 1 1 (+)
+				@patient2device_expand_index_and_sign $expr1 $expr2 2 2 (+)
+				@patient2device_expand_index_and_sign $expr1 $expr2 3 3 (+)
+			elseif $pos == FeetFirstLateralRight
+				@patient2device_expand_index_and_sign $expr1 $expr2 1 2 (-)
+				@patient2device_expand_index_and_sign $expr1 $expr2 2 1 (+)
+				@patient2device_expand_index_and_sign $expr1 $expr2 3 3 (+)
+			elseif $pos == FeetFirstLateralLeft
+				@patient2device_expand_index_and_sign $expr1 $expr2 1 2 (+)
+				@patient2device_expand_index_and_sign $expr1 $expr2 2 1 (-)
+				@patient2device_expand_index_and_sign $expr1 $expr2 3 3 (+)
+			end
+		end
+	end
+
+	"""
+		patient2device(pos::PatientPosition)
+
+	Rotation matrix transforming from patient to the device coordinate system.
+	"""
 	function patient2device(pos::PatientPosition)
 		R = zeros(3, 3)
-		if pos == HeadFirstSupine # This is tested, the others are not
-			R[1, 1] = 1
-			R[2, 2] = 1
-			R[3, 3] = 1
-		elseif pos == HeadFirstProne
-			R[1, 1] = -1
-			R[2, 2] = 1
-			R[3, 3] = -1
-		elseif pos == HeadFirstLateralRight
-			R[1, 2] = 1
-			R[2, 1] = 1
-			R[3, 3] = -1
-		elseif pos == HeadFirstLateralLeft
-			R[1, 2] = -1
-			R[2, 1] = -1
-			R[3, 3] = -1
-		elseif pos == FeetFirstSupine
-			R[1, 1] = -1
-			R[2, 2] = -1
-			R[3, 3] = 1
-		elseif pos == FeetFirstProne
-			R[1, 1] = 1
-			R[2, 2] = 1
-			R[3, 3] = 1
-		elseif pos == FeetFirstLateralRight
-			R[1, 2] = -1
-			R[2, 1] = 1
-			R[3, 3] = 1
-		elseif pos == FeetFirstLateralLeft
-			R[1, 2] = 1
-			R[2, 1] = -1
-			R[3, 3] = 1
-		end
+		println(1)
+		@patient2device pos R 1
 		return R
 	end
 
+	"""
+		patient2device(v::AbstractVector{<: Real}, pos::PatientPosition)
+
+	Transform single vector from patient coordinates to device coordinates.
+	"""
 	function patient2device(v::AbstractVector{<: Real}, pos::PatientPosition)
 		w = zeros(3)
-		if pos == HeadFirstSupine
-			w[1] =  v[1]
-			w[2] = -v[2]
-			w[3] = -v[3]
-		elseif pos == HeadFirstProne
-			w[1] = -v[1]
-			w[2] =  v[2]
-			w[3] = -v[3]
-		elseif pos == HeadFirstLateralRight
-			w[1] =  v[2]
-			w[2] =  v[1]
-			w[3] = -v[3]
-		elseif pos == HeadFirstLateralLeft
-			w[1] = -v[2]
-			w[2] = -v[1]
-			w[3] = -v[3]
-		elseif pos == FeetFirstSupine
-			w[1] = -v[1]
-			w[2] = -v[2]
-			w[3] =  v[3]
-		elseif pos == FeetFirstProne
-			w[1] =  v[1]
-			w[2] =  v[2]
-			w[3] =  v[3]
-		elseif pos == FeetFirstLateralRight
-			w[1] = -v[2]
-			w[2] =  v[1]
-			w[3] =  v[3]
-		elseif pos == FeetFirstLateralLeft
-			w[1] =  v[2]
-			w[2] = -v[1]
-			w[3] =  v[3]
-		end
+		@patient2device pos w v
 		return w
 	end
 
+	"""
+		patient2device(pos::PatientPosition)
+
+	Rotation matrix transforming from device to the patient coordinate system.
+	"""
 	device2patient(pos::PatientPosition) = pos |> patient2device |> transpose
 
 	"""
-		normal must be in patient coordinates
+		gradient2device(normal::AbstractVector{<: Real}, β::Real, pos::PatientPosition)
+
+	Rotation matrix transforming from the gradient to the device coordinate system.
 	"""
-	function gradient2patient(normal::AbstractVector{<: Real}, β::Real, pos::PatientPosition)
+	function gradient2device(normal::AbstractVector{<: Real}, β::Real, pos::PatientPosition)
 		orientation = normal2orientation(normal)
-		normal = patient2device(normal, pos)
-		R_gradient2device = gradient2device(normal, β, orientation)
-		R_device2patient = device2patient(pos)
-		return R_device2patient * R_gradient2device
+		Rg2p = MRICoordinates.gradient2patient(normal, β, orientation)
+		Rp2d = MRICoordinates.patient2device(pos)
+		return Rp2d * Rg2p
 	end
 end
 
