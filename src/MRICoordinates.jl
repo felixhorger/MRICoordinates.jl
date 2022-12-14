@@ -244,7 +244,6 @@ module MRICoordinates
 	"""
 	function patient2device(pos::PatientPosition)
 		R = zeros(3, 3)
-		println(1)
 		@patient2device pos R 1
 		return R
 	end
