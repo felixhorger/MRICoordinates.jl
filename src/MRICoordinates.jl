@@ -2,9 +2,9 @@
 """
 	MRICoordinates.jl
 
-*Only right handed systems*
-
 *Only tested for Siemens scanners*
+
+*Only right handed coordinate systems*
 
 ## Device Coordinate System
 - Stand in front of the scanner, take the right hand, thumb pointing to your right, index upwards, middle finger towards you.
@@ -164,6 +164,11 @@ module MRICoordinates
 		end
 		return R_rotated
 	end
+	# Convenience
+	function gradient2patient(normal::AbstractVector{<: Real}, β::Real)
+		orientation = normal2orientation(normal)
+		return gradient2patient(normal, β, orientation)
+	end
 
 	"""
 		@patient2device_expand_index_and_sign expr1 expr2 i1 i2 sign
@@ -267,12 +272,11 @@ module MRICoordinates
 	device2patient(pos::PatientPosition) = pos |> patient2device |> transpose
 
 	"""
-		gradient2device(normal::AbstractVector{<: Real}, β::Real, pos::PatientPosition)
+		gradient2device(normal::AbstractVector{<: Real}, β::Real, orientation::Orientation)
 
 	Rotation matrix transforming from the gradient to the device coordinate system.
 	"""
-	function gradient2device(normal::AbstractVector{<: Real}, β::Real, pos::PatientPosition)
-		orientation = normal2orientation(normal)
+	function gradient2device(normal::AbstractVector{<: Real}, β::Real, orientation::Orientation, pos::PatientPosition)
 		Rg2p = MRICoordinates.gradient2patient(normal, β, orientation)
 		Rp2d = MRICoordinates.patient2device(pos)
 		return Rp2d * Rg2p
