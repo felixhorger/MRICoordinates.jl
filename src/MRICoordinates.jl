@@ -158,8 +158,8 @@ module MRICoordinates
 		sinβ, cosβ = sincos(β)
 		R_rotated = similar(R)
 		@views @. begin
-			R_rotated[:, 1] = cosβ * R[:, 1] + sinβ * R[:, 2]
-			R_rotated[:, 2] = cosβ * R[:, 2] - sinβ * R[:, 1]
+			R_rotated[:, 1] = cosβ * R[:, 1] + sinβ * R[:, 2] # TODO: this is done differently in https://github.com/pehses/twixtools/blob/master/twixtools/geometry.py
+			R_rotated[:, 2] = cosβ * R[:, 2] - sinβ * R[:, 1] # However I think this is correct because no swap of coordinates, maybe pehses merged two operations into one.
 			R_rotated[:, 3] = R[:, 3]
 		end
 		return R_rotated
