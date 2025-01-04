@@ -2,6 +2,8 @@
 """
 	MRICoordinates.jl
 
+TODO: Switch first two axes, they are wrong way around
+
 *Only tested for Siemens scanners*
 
 *Only right handed coordinate systems*
@@ -14,7 +16,7 @@
 ## Patient Coordinate System
 - Sagittal (right -> left), coronal (anterior -> posterior) and transversal (feet -> head) coordinates.
 - Origin equal to that of device coordinate system.
-- Axes are (anti-)parallel with those of the device coordinate system.
+- Axes are aligned with those of the device coordinate system but can be parallel/anti-parallel.
 
 ## Gradient Coordinate System
 - Rotated by user, i.e. read, phase, partition.
@@ -154,7 +156,7 @@ module MRICoordinates
 		# Line and partition direction then determine readout direction
 		@views R[:, 1] .= R[:, 2] × R[:, 3]
 
-		# In plane rotation
+		# In plane rotation R_rotated = R * R_β
 		sinβ, cosβ = sincos(β)
 		R_rotated = similar(R)
 		@views @. begin
